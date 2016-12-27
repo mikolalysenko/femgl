@@ -37,9 +37,9 @@ def parseQuads(quadData):
         quads[int(parts[0])] = tuple([int(x) for x in parts[1:]])
     return quads
 
-palPattern = re.compile(r'palette hls (\d+) (\d+) (\d+)')
+palPattern = re.compile(r'palette\s+hls\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)')
 def parsePalette(palData):
-    return [ colorsys.hls_to_rgb(float(h), float(l), float(s)) for (h, l, s) in re.findall(palPattern, palData)]
+    return [ colorsys.hls_to_rgb(float(h) / 360.0, float(l) / 100.0, float(s) / 100.0) for (_, h, l, s) in re.findall(palPattern, palData)]
 
 def parseMesh(data):
     coordinates_ = parseCoordinates(data['coordinates'])
@@ -59,7 +59,7 @@ def parseMesh(data):
         coordinatesPacked.append(coordinates_[n])
         displacementsPacked.append(displacements_[n])
         index_[n] = count
-        return n
+        return count
 
     def cell (verts):
         return tuple([index(n) for n in verts])
@@ -76,14 +76,23 @@ def parseMesh(data):
         triStresses.append(stresses_[I])
         trisPacked.append(cell(triangles_[I]))
 
+    palette_.reverse()
     return {
+        'palette': palette_,
         'coordinates': coordinatesPacked,
         'displacements': displacementsPacked,
-        'quads': quadsPacked,
-        'quadStresses': quadStresses,
-        'tris': trisPacked,
-        'triStresses': triStresses,
-        'palette': palette_
+        'elements': [
+            {
+                'type': 'P8',
+                'stresses': quadStresses,
+                'cells': quadsPacked
+            },
+            {
+                'type': 'P6',
+                'stresses': triStresses,
+                'cells': trisPacked
+            }
+        ]
     }
 
 def convertMesh(data):
