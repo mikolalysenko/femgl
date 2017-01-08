@@ -36,15 +36,27 @@ module.exports = function ({regl}) {
     stress,
     stressBounds,
     palette,
-    count) {
+    count,
+    lineP0,
+    lineD0,
+    lineP1,
+    lineD1,
+    lineN,
+    lineCount) {
     this._position = position
+    this._positionBounds = positionBounds
     this._displacement = displacement
+    this._displacementBounds = displacementBounds
     this._stress = stress
+    this._stressBounds = stressBounds
     this._palette = palette
     this._count = count
-    this._positionBounds = positionBounds
-    this._stressBounds = stressBounds
-    this._displacementBounds = displacementBounds
+    this._lineP0 = lineP0
+    this._lineD0 = lineD0
+    this._lineP1 = lineP1
+    this._lineD1 = lineD1
+    this._lineN = lineN
+    this._lineCount = lineCount
   }
 
   const drawElements = regl({
@@ -107,8 +119,61 @@ module.exports = function ({regl}) {
     elements: null
   })
 
+  const drawLines = regl({
+    vert: `
+    precision highp float;
+
+    attribute vec3 p0, d0, p1, d1;
+    attribute float n;
+
+    uniform mat4 projection, view;
+    uniform float displacementMag, lineWidth;
+    uniform vec2 shape;
+
+    void main () {
+      vec3 q0 = p0 + displacementMag * d0;
+      vec3 q1 = p1 + displacementMag * d1;
+      vec4 s0 = projection * view * vec4(q0, 1);
+      vec4 s1 = projection * view * vec4(q1, 1);
+      vec2 d = lineWidth * n * normalize(s1.xy * s0.w - s0.xy * s1.w);
+      gl_Position = s0 + s0.w * vec4(d.y / shape.x, -d.x / shape.y, 0, 0);
+    }
+    `,
+
+    frag: `
+    precision lowp float;
+    void main () {
+      gl_FragColor = vec4(0, 0, 0, 1);
+    }
+    `,
+
+    attributes: {
+      p0: regl.this('_lineP0'),
+      d0: regl.this('_lineD0'),
+      p1: regl.this('_lineP1'),
+      d1: regl.this('_lineD1'),
+      n: regl.this('_lineN')
+    },
+
+    uniforms: {
+      displacementMag: regl.prop('displacementMag'),
+      lineWidth: regl.prop('lineWidth'),
+      shape: ({viewportWidth, viewportHeight, pixelRatio}) =>
+        [
+          viewportWidth / pixelRatio,
+          viewportHeight / pixelRatio
+        ]
+    },
+
+    depth: {
+      func: '<='
+    },
+
+    count: regl.this('_lineCount')
+  })
+
   Mesh.prototype = {
-    draw ({mode, displacement}) {
+    draw ({mode, displacement, lineWidth}) {
       let displacementColor = [0, 0, 0]
       let totalColor = 0
       let stressColor = 0
@@ -143,6 +208,10 @@ module.exports = function ({regl}) {
         stressColor,
         colorShift,
         displacementMag: displacement
+      })
+      drawLines.call(this, {
+        displacementMag: displacement,
+        lineWidth
       })
     }
   }
@@ -183,6 +252,65 @@ module.exports = function ({regl}) {
       vertCount += 1
     }
 
+    const lineP0 = []
+    const lineD0 = []
+    const lineP1 = []
+    const lineD1 = []
+    const lineN = []
+    let lineCount = 0
+
+    function E (p0, d0, p1, d1) {
+      lineP0.push(
+        p0, p0, p1,
+        p1, p0, p1)
+      lineD0.push(
+        d0, d0, d1,
+        d1, d0, d1)
+      lineP1.push(
+        p1, p1, p0,
+        p0, p1, p0)
+      lineD1.push(
+        d1, d1, d0,
+        d0, d1, d0)
+      lineN.push(
+        1, -1, 1,
+        -1, 1, 1)
+      lineCount += 6
+    }
+
+    function C (
+      pa0, da0, pa1, da1,
+      pb0, db0, pb1, db1) {
+      lineP0.push(
+        pa1, pa1, pb0,
+        pb0, pa1, pb0)
+      lineD0.push(
+        da1, da1, db0,
+        db0, da1, db0)
+      lineP1.push(
+        pa0, pa0, pb1,
+        pb1, pa0, pb1)
+      lineD1.push(
+        da0, da0, db1,
+        db1, da0, db1)
+      lineN.push(
+        1, -1, 1,
+        -1, 1, 1)
+      lineCount += 6
+    }
+
+    function W6 (a, b) {
+      const c = 1 - a - b
+      return [
+        a * (2 * a - 1),
+        4 * a * b,
+        b * (2 * b - 1),
+        4 * b * c,
+        c * (2 * c - 1),
+        4 * c * a
+      ]
+    }
+
     function P6 (S, cell) {
       const P = pick(coordinates, cell)
       const D = pick(displacements, cell)
@@ -193,21 +321,67 @@ module.exports = function ({regl}) {
           for (let v = 0; v < COUNT; ++v) {
             const a = (i + QUAD_TRIS[v][0]) / N
             const b = (j + QUAD_TRIS[v][1]) / N
-            const c = 1 - a - b
-
-            const W = [
-              a * (2 * a - 1),
-              4 * a * b,
-              b * (2 * b - 1),
-              4 * b * c,
-              c * (2 * c - 1),
-              4 * c * a
-            ]
-
+            const W = W6(a, b)
             V(dot3(P, W), dot3(D, W), S)
           }
         }
       }
+
+      const corners = [[], [], []]
+
+      for (let s = 0; s < 3; ++s) {
+        let P0 = null
+        let D0 = null
+        let P1 = null
+        let D1 = null
+        for (let i = 0; i <= N; ++i) {
+          const W =
+            (s === 0) ? W6(i / N, 0)
+            : (s === 1) ? W6(0, i / N)
+                        : W6(i / N, 1 - i / N)
+          const P2 = dot3(P, W)
+          const D2 = dot3(D, W)
+
+          if (i <= 1 || i === N - 1) {
+            corners[s].push([P2, D2])
+          }
+
+          if (P0) {
+            C(P0, D0, P1, D1,
+              P1, D1, P2, D2)
+          }
+          P0 = P1
+          D0 = D1
+
+          if (P1) {
+            E(P1, D1, P2, D2)
+          }
+          P1 = P2
+          D1 = D2
+        }
+      }
+
+      for (let d = 0; d < 3; ++d) {
+        const u = (d + 2) % 3
+        C(
+          corners[u][2][0], corners[u][2][1],
+          corners[d][0][0], corners[d][0][1],
+          corners[d][0][0], corners[d][0][1],
+          corners[d][1][0], corners[d][1][1])
+      }
+    }
+
+    function W8 (a, b) {
+      return [
+        0.25 * (1 - a) * (b - 1) * (a + b + 1),
+        0.5 * (1 - b) * (1 - a * a),
+        0.25 * (1 + a) * (b - 1) * (b - a + 1),
+        0.5 * (1 + a) * (1 - b * b),
+        0.25 * (1 + a) * (1 + b) * (a + b - 1),
+        0.5 * (1 + b) * (1 - a * a),
+        0.25 * (a - 1) * (b + 1) * (a - b + 1),
+        0.5 * (1 - a) * (1 - b * b)
+      ]
     }
 
     function P8 (S, cell) {
@@ -219,21 +393,56 @@ module.exports = function ({regl}) {
           for (let v = 0; v < QUAD_TRIS.length; ++v) {
             const a = 2 * (i + QUAD_TRIS[v][0]) / N - 1
             const b = 2 * (j + QUAD_TRIS[v][1]) / N - 1
-
-            const W = [
-              0.25 * (1 - a) * (b - 1) * (a + b + 1),
-              0.5 * (1 - b) * (1 - a * a),
-              0.25 * (1 + a) * (b - 1) * (b - a + 1),
-              0.5 * (1 + a) * (1 - b * b),
-              0.25 * (1 + a) * (1 + b) * (a + b - 1),
-              0.5 * (1 + b) * (1 - a * a),
-              0.25 * (a - 1) * (b + 1) * (a - b + 1),
-              0.5 * (1 - a) * (1 - b * b)
-            ]
-
+            const W = W8(a, b)
             V(dot3(P, W), dot3(D, W), S)
           }
         }
+      }
+
+      const corners = [[], [], [], []]
+
+      let curCorner = 0
+      for (let d = 0; d < 2; ++d) {
+        for (let s = 0; s <= 1; ++s, ++curCorner) {
+          let P0 = null
+          let D0 = null
+          let P1 = null
+          let D1 = null
+          for (let i = 0; i <= N; ++i) {
+            const ab = [0, 0]
+            ab[d] = 2 * i / N - 1
+            ab[d ^ 1] = 2 * s - 1
+            const W = W8(ab[0], ab[1])
+            const P2 = dot3(P, W)
+            const D2 = dot3(D, W)
+
+            if (i <= 1 || i === N - 1) {
+              corners[curCorner].push([P2, D2])
+            }
+
+            if (P0) {
+              C(P0, D0, P1, D1,
+                P1, D1, P2, D2)
+            }
+            P0 = P1
+            D0 = D1
+
+            if (P1) {
+              E(P1, D1, P2, D2)
+            }
+            P1 = P2
+            D1 = D2
+          }
+        }
+      }
+
+      for (let d = 0; d < 4; ++d) {
+        const u = (d + 3) % 4
+        C(
+          corners[u][2][0], corners[u][2][1],
+          corners[d][0][0], corners[d][0][1],
+          corners[d][0][0], corners[d][0][1],
+          corners[d][1][0], corners[d][1][1])
       }
     }
 
@@ -271,7 +480,13 @@ module.exports = function ({regl}) {
         min: 'linear',
         mag: 'linear'
       }),
-      vertCount)
+      vertCount,
+      regl.buffer(lineP0),
+      regl.buffer(lineD0),
+      regl.buffer(lineP1),
+      regl.buffer(lineD1),
+      regl.buffer(lineN),
+      lineCount)
   }
 
   return createMesh

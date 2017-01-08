@@ -16,6 +16,7 @@ regl.frame(({tick}) => {
   setupCamera(() => {
     mesh.draw({
       displacement: 100.0 * (1.0 + Math.cos(0.01 * tick)),
+      lineWidth: 2,
       mode: 'stress'
     })
   })
