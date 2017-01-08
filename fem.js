@@ -57,6 +57,16 @@ module.exports = function ({regl}) {
     this._lineD1 = lineD1
     this._lineN = lineN
     this._lineCount = lineCount
+
+    this.center = [0, 0, 0]
+    this.radius = 0
+    for (let i = 0; i < 3; ++i) {
+      this.center[i] = 0.5 *
+        (this._positionBounds[0][i] + this._positionBounds[1][i])
+      this.radius += Math.pow(
+        this._positionBounds[1][i] - this._positionBounds[0][i], 2)
+    }
+    this.radius = Math.sqrt(this.radius)
   }
 
   const drawElements = regl({
@@ -173,7 +183,7 @@ module.exports = function ({regl}) {
   })
 
   Mesh.prototype = {
-    draw ({mode, displacement, lineWidth}) {
+    draw ({mode, displacement, lineWidth, elements, lines}) {
       let displacementColor = [0, 0, 0]
       let totalColor = 0
       let stressColor = 0
@@ -202,17 +212,21 @@ module.exports = function ({regl}) {
           totalColor = 1 / totalColor
           break
       }
-      drawElements.call(this, {
-        displacementColor,
-        totalColor,
-        stressColor,
-        colorShift,
-        displacementMag: displacement
-      })
-      drawLines.call(this, {
-        displacementMag: displacement,
-        lineWidth
-      })
+      if (elements) {
+        drawElements.call(this, {
+          displacementColor,
+          totalColor,
+          stressColor,
+          colorShift,
+          displacementMag: displacement
+        })
+      }
+      if (lines) {
+        drawLines.call(this, {
+          displacementMag: displacement,
+          lineWidth
+        })
+      }
     }
   }
 
@@ -242,8 +256,8 @@ module.exports = function ({regl}) {
       displacement.push(d[0], d[1], d[2])
       stress.push(s)
       for (let i = 0; i < 3; ++i) {
-        positionBounds[0][i] = Math.min(positionBounds[0][i], d[i])
-        positionBounds[1][i] = Math.max(positionBounds[1][i], d[i])
+        positionBounds[0][i] = Math.min(positionBounds[0][i], p[i])
+        positionBounds[1][i] = Math.max(positionBounds[1][i], p[i])
         displacementBounds[0][i] = Math.min(displacementBounds[0][i], d[i])
         displacementBounds[1][i] = Math.max(displacementBounds[1][i], d[i])
       }
