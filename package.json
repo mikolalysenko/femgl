@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "python convert/example.py",
+    "build-page": "browserify index.js | indexhtmlify > index.html",
     "start": "budo index.js --open --live"
   },
   "repository": {
@@ -24,13 +25,17 @@
     "url": "https://github.com/mikolalysenko/femgl/issues"
   },
   "browserify": {
-    "transform": ["es2020"]
+    "transform": [
+      "es2020"
+    ]
   },
   "homepage": "https://github.com/mikolalysenko/femgl#readme",
   "dependencies": {
+    "browserify": "^13.3.0",
     "control-panel": "^1.2.0",
     "drag-and-drop-files": "0.0.1",
     "es2020": "^1.1.9",
+    "indexhtmlify": "^1.3.1",
     "regl": "^1.3.0",
     "regl-camera": "^1.1.0"
   }
