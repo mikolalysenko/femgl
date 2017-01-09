@@ -498,6 +498,29 @@ function rebuildMesh() {
 
 rebuildMesh();
 
+function handleFiles([file]) {
+  var reader = new window.FileReader();
+  reader.onload = function (data) {
+    try {
+      var meshData = JSON.parse(data.target.result);
+      mesh = createMesh(meshData, state.subdivisions);
+      state.meshData = meshData;
+      rebuildMesh();
+    } catch (e) {
+      window.alert('invalid data file');
+    }
+  };
+  reader.readAsText(file);
+}
+
+var uploadInput = document.createElement('input');
+uploadInput.setAttribute('type', 'file');
+uploadInput.addEventListener('change', function () {
+  if (uploadInput.files && uploadInput.files.length > 0) {
+    handleFiles(uploadInput.files);
+  }
+});
+
 require('control-panel')([{
   type: 'range',
   label: 'displacement',
@@ -534,6 +557,12 @@ require('control-panel')([{
   max: 8,
   step: 1,
   initial: state.subdivisions
+}, {
+  type: 'button',
+  label: 'open file',
+  action: function () {
+    uploadInput.click();
+  }
 }]).on('input', function (data) {
   var psubdiv = state.subdivisions;
   Object.assign(state, data);
@@ -555,20 +584,7 @@ require('./gesture')({
   }
 });
 
-require('drag-and-drop-files')(regl._gl.canvas, function ([file]) {
-  var reader = new window.FileReader();
-  reader.onload = function (data) {
-    try {
-      var meshData = JSON.parse(data.target.result);
-      mesh = createMesh(meshData, state.subdivisions);
-      state.meshData = meshData;
-      rebuildMesh();
-    } catch (e) {
-      window.alert('invalid data file');
-    }
-  };
-  reader.readAsText(file);
-});
+require('drag-and-drop-files')(regl._gl.canvas, handleFiles);
 
 regl.frame(function ({ tick }) {
   camera.integrate(state);
