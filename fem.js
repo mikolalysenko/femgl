@@ -490,9 +490,7 @@ module.exports = function ({regl}) {
           255 * Math.pow(g, 2.2),
           255 * Math.pow(b, 2.2)
         ]),
-        shape: [palette.length, 1, 3],
-        min: 'linear',
-        mag: 'linear'
+        shape: [palette.length, 1, 3]
       }),
       vertCount,
       regl.buffer(lineP0),

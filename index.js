@@ -13,6 +13,7 @@ const state = {
   mode: 'stress',
   elements: true,
   lines: true,
+  ortho: true,
   subdivisions: 4,
   meshData: require('./mesh.json')
 }
@@ -57,7 +58,7 @@ require('control-panel')([
     type: 'range',
     label: 'displacement',
     min: 0,
-    max: 250,
+    max: 255,
     initial: state.displacement
   },
   /*
@@ -80,6 +81,11 @@ require('control-panel')([
       'total'
     ],
     initial: state.mode
+  },
+  {
+    type: 'checkbox',
+    label: 'ortho',
+    initial: state.ortho
   },
   {
     type: 'checkbox',

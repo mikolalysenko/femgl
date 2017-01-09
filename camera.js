@@ -47,13 +47,23 @@ module.exports = function ({regl}) {
 
   return {
     integrate,
-    setup: function ({eye, center, up}, body) {
+    setup: function ({eye, center, up, ortho, polar}, body) {
       regl.draw(({viewportWidth, viewportHeight, tick}) => {
-        mat4.perspective(projection,
-          Math.PI / 4.0,
-          viewportWidth / viewportHeight,
-          0.125,
-          65536.0)
+        if (ortho) {
+          const radius = Math.exp(polar[2])
+          const aspect = viewportHeight / viewportWidth
+          mat4.ortho(
+            projection,
+            -radius, radius,
+            -aspect * radius, aspect * radius,
+            0, 65536.0)
+        } else {
+          mat4.perspective(projection,
+            Math.PI / 4.0,
+            viewportWidth / viewportHeight,
+            0.125,
+            65536.0)
+        }
         mat4.lookAt(
           view,
           eye,
