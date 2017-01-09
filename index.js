@@ -29,6 +29,29 @@ function rebuildMesh () {
 
 rebuildMesh()
 
+function handleFiles ([file]) {
+  const reader = new window.FileReader()
+  reader.onload = (data) => {
+    try {
+      const meshData = JSON.parse(data.target.result)
+      mesh = createMesh(meshData, state.subdivisions)
+      state.meshData = meshData
+      rebuildMesh()
+    } catch (e) {
+      window.alert('invalid data file')
+    }
+  }
+  reader.readAsText(file)
+}
+
+const uploadInput = document.createElement('input')
+uploadInput.setAttribute('type', 'file')
+uploadInput.addEventListener('change', () => {
+  if (uploadInput.files && uploadInput.files.length > 0) {
+    handleFiles(uploadInput.files)
+  }
+})
+
 require('control-panel')([
   {
     type: 'range',
@@ -75,6 +98,13 @@ require('control-panel')([
     max: 8,
     step: 1,
     initial: state.subdivisions
+  },
+  {
+    type: 'button',
+    label: 'open file',
+    action: () => {
+      uploadInput.click()
+    }
   }
 ]).on('input', (data) => {
   const psubdiv = state.subdivisions
@@ -97,20 +127,7 @@ require('./gesture')({
   }
 })
 
-require('drag-and-drop-files')(regl._gl.canvas, ([file]) => {
-  const reader = new window.FileReader()
-  reader.onload = (data) => {
-    try {
-      const meshData = JSON.parse(data.target.result)
-      mesh = createMesh(meshData, state.subdivisions)
-      state.meshData = meshData
-      rebuildMesh()
-    } catch (e) {
-      window.alert('invalid data file')
-    }
-  }
-  reader.readAsText(file)
-})
+require('drag-and-drop-files')(regl._gl.canvas, handleFiles)
 
 regl.frame(({tick}) => {
   camera.integrate(state)
