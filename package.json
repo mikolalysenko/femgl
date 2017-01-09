@@ -32,6 +32,7 @@
   "homepage": "https://github.com/mikolalysenko/femgl#readme",
   "dependencies": {
     "browserify": "^13.3.0",
+    "budo": "^9.4.1",
     "control-panel": "^1.2.0",
     "drag-and-drop-files": "0.0.1",
     "es2020": "^1.1.9",
