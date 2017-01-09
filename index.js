@@ -57,7 +57,7 @@ require('control-panel')([
     type: 'range',
     label: 'displacement',
     min: 0,
-    max: 100,
+    max: 250,
     initial: state.displacement
   },
   /*
