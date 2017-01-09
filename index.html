@@ -64,9 +64,15 @@ module.exports = function ({ regl }) {
 
   return {
     integrate,
-    setup: function ({ eye, center, up }, body) {
+    setup: function ({ eye, center, up, ortho, polar }, body) {
       regl.draw(function ({ viewportWidth, viewportHeight, tick }) {
-        mat4.perspective(projection, Math.PI / 4.0, viewportWidth / viewportHeight, 0.125, 65536.0);
+        if (ortho) {
+          var radius = Math.exp(polar[2]);
+          var aspect = viewportHeight / viewportWidth;
+          mat4.ortho(projection, -radius, radius, -aspect * radius, aspect * radius, 0, 65536.0);
+        } else {
+          mat4.perspective(projection, Math.PI / 4.0, viewportWidth / viewportHeight, 0.125, 65536.0);
+        }
         mat4.lookAt(view, eye, center, up);
         mat4.invert(invProjection, projection);
         mat4.invert(invView, view);
@@ -422,9 +428,7 @@ module.exports = function ({ regl }) {
       data: palette.map(function ([r, g, b]) {
         return [255 * Math.pow(r, 2.2), 255 * Math.pow(g, 2.2), 255 * Math.pow(b, 2.2)];
       }),
-      shape: [palette.length, 1, 3],
-      min: 'linear',
-      mag: 'linear'
+      shape: [palette.length, 1, 3]
     }), vertCount, regl.buffer(lineP0), regl.buffer(lineD0), regl.buffer(lineP1), regl.buffer(lineD1), regl.buffer(lineN), lineCount);
   }
 
@@ -482,6 +486,7 @@ var state = {
   mode: 'stress',
   elements: true,
   lines: true,
+  ortho: true,
   subdivisions: 4,
   meshData: require('./mesh.json')
 };
@@ -525,7 +530,7 @@ require('control-panel')([{
   type: 'range',
   label: 'displacement',
   min: 0,
-  max: 250,
+  max: 255,
   initial: state.displacement
 },
 /*
@@ -542,6 +547,10 @@ require('control-panel')([{
   label: 'mode',
   options: ['stress', 'x', 'y', 'z', 'total'],
   initial: state.mode
+}, {
+  type: 'checkbox',
+  label: 'ortho',
+  initial: state.ortho
 }, {
   type: 'checkbox',
   label: 'elements',
