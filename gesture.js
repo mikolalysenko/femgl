@@ -2,8 +2,8 @@ module.exports = function ({ canvas, onPan, onZoom, onRotate }) {
   let prevX = 0
   let prevY = 0
 
-  canvas.addEventListener('mousemove', ({clientX, clientY, buttons}) => {
-    if (buttons & 1) {
+  canvas.addEventListener('mousemove', ({clientX, clientY, buttons, which}) => {
+    if ((buttons | which | 0) & 1) {
       onRotate(
         (clientX - prevX) / window.innerWidth,
         (prevY - clientY) / window.innerHeight)
@@ -12,8 +12,8 @@ module.exports = function ({ canvas, onPan, onZoom, onRotate }) {
     }
   })
 
-  canvas.addEventListener('mousedown', ({clientX, clientY, buttons}) => {
-    if (buttons & 1) {
+  canvas.addEventListener('mousedown', ({clientX, clientY, buttons, which}) => {
+    if ((buttons | which | 0) & 1) {
       prevX = clientX
       prevY = clientY
     }
