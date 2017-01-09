@@ -33,6 +33,7 @@ module.exports = function ({regl}) {
     positionBounds,
     displacement,
     displacementBounds,
+    maxDisplacment,
     stress,
     stressBounds,
     palette,
@@ -47,6 +48,7 @@ module.exports = function ({regl}) {
     this._positionBounds = positionBounds
     this._displacement = displacement
     this._displacementBounds = displacementBounds
+    this._maxDisplacement = maxDisplacment
     this._stress = stress
     this._stressBounds = stressBounds
     this._palette = palette
@@ -98,7 +100,7 @@ module.exports = function ({regl}) {
     void main () {
       intensity =
         stressColor * stress +
-        totalColor * dot(vec3(1), abs(displacement)) +
+        totalColor * length(displacement) +
         dot(displacementColor, displacement) +
         colorShift;
       gl_Position = projection * view *
@@ -204,12 +206,7 @@ module.exports = function ({regl}) {
           colorShift = -displacementBounds[0][d] * displacementColor[d]
           break
         case 'total':
-          for (let d = 0; d < 3; ++d) {
-            totalColor += Math.max(
-              Math.abs(displacementBounds[0][d]),
-              Math.abs(displacementBounds[1][d]))
-          }
-          totalColor = 1 / totalColor
+          totalColor = 1 / this._maxDisplacement
           break
       }
       if (elements) {
@@ -250,20 +247,24 @@ module.exports = function ({regl}) {
       [-Infinity, -Infinity, -Infinity]
     ]
     const stressBounds = [ Infinity, -Infinity ]
+    let maxDisplacment = 0
 
     function V (p, d, s) {
       position.push(p[0], p[1], p[2])
       displacement.push(d[0], d[1], d[2])
       stress.push(s)
+      let d2 = 0
       for (let i = 0; i < 3; ++i) {
         positionBounds[0][i] = Math.min(positionBounds[0][i], p[i])
         positionBounds[1][i] = Math.max(positionBounds[1][i], p[i])
         displacementBounds[0][i] = Math.min(displacementBounds[0][i], d[i])
         displacementBounds[1][i] = Math.max(displacementBounds[1][i], d[i])
+        d2 += Math.pow(d[i], 2)
       }
       stressBounds[0] = Math.min(stressBounds[0], s)
       stressBounds[1] = Math.max(stressBounds[1], s)
       vertCount += 1
+      maxDisplacment = Math.max(maxDisplacment, Math.sqrt(d2))
     }
 
     const lineP0 = []
@@ -482,6 +483,7 @@ module.exports = function ({regl}) {
       positionBounds,
       regl.buffer(displacement),
       displacementBounds,
+      maxDisplacment,
       regl.buffer(stress),
       stressBounds,
       regl.texture({
