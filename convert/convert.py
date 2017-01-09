@@ -39,7 +39,7 @@ def parseQuads(quadData):
 
 palPattern = re.compile(r'palette\s+hls\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)')
 def parsePalette(palData):
-    return [ colorsys.hls_to_rgb(float(h) / 360.0, float(l) / 100.0, float(s) / 100.0) for (_, h, l, s) in re.findall(palPattern, palData)]
+    return [ colorsys.hls_to_rgb(1 - float(h) / 360.0, float(l) / 100.0, float(s) / 100.0) for (_, h, l, s) in re.findall(palPattern, palData)]
 
 def parseMesh(data):
     coordinates_ = parseCoordinates(data['coordinates'])
