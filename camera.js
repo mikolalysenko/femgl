@@ -34,7 +34,7 @@ module.exports = function ({regl}) {
       state.dpolar[i] *= 0.8
     }
 
-    state.polar[1] = clamp(state.polar[1], -0.25 * Math.PI, 0.25 * Math.PI)
+    state.polar[1] = clamp(state.polar[1], -0.495 * Math.PI, 0.495 * Math.PI)
     state.polar[2] = clamp(state.polar[2], -5, 10)
 
     const [ theta, phi, logRadius ] = state.polar

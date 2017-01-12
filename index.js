@@ -1,4 +1,6 @@
-const regl = require('regl')()
+const regl = require('regl')({
+  extensions: 'OES_element_index_uint'
+})
 const camera = require('./camera')({regl})
 const createMesh = require('./fem')({regl})
 
@@ -14,7 +16,7 @@ const state = {
   elements: true,
   lines: true,
   ortho: true,
-  subdivisions: 4,
+  subdivisions: 3,
   meshData: require('./mesh.json')
 }
 
@@ -100,7 +102,7 @@ require('control-panel')([
   {
     type: 'range',
     label: 'subdivisions',
-    min: 3,
+    min: 1,
     max: 8,
     step: 1,
     initial: state.subdivisions
