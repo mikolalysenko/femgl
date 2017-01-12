@@ -51,7 +51,7 @@ module.exports = function ({ regl }) {
       state.dpolar[i] *= 0.8;
     }
 
-    state.polar[1] = clamp(state.polar[1], -0.25 * Math.PI, 0.25 * Math.PI);
+    state.polar[1] = clamp(state.polar[1], -0.495 * Math.PI, 0.495 * Math.PI);
     state.polar[2] = clamp(state.polar[2], -5, 10);
 
     var [theta, phi, logRadius] = state.polar;
@@ -84,6 +84,9 @@ module.exports = function ({ regl }) {
   };
 };
 },{"gl-mat4":117}],2:[function(require,module,exports){
+var P_TOL = 1e6;
+var D_TOL = 1e9;
+
 var QUAD_TRIS = [[0, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 1]];
 
 function dot3(values, weights) {
@@ -106,8 +109,39 @@ function pick(array, index) {
   return r;
 }
 
+function cmpP(a, b) {
+  return Math.abs(a[0] - b[0]) < P_TOL || Math.abs(a[1] - b[1]) < P_TOL || Math.abs(a[2] - b[2]) < P_TOL;
+}
+
+function cmpD(a, b) {
+  return Math.abs(a[0] - b[0]) < D_TOL || Math.abs(a[1] - b[1]) < D_TOL || Math.abs(a[2] - b[2]) < D_TOL;
+}
+
+function convertLineVerts(lineV) {
+  var lineElements = [];
+  for (var i = 0; i < lineV.length; i += 3) {
+    var a = lineV[i];
+    var b = lineV[i + 1];
+    var c = lineV[i + 2];
+    lineElements.push([Math.min(a, b, c), Math.min(Math.max(a, b), Math.max(b, c), Math.max(c, a)), Math.max(a, b, c)]);
+  }
+  lineElements.sort(function (a, b) {
+    return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  });
+  var ptr = 1;
+  for (var _i = 1; _i < lineElements.length; ++_i) {
+    var _a = lineElements[_i - 1];
+    var _b = lineElements[_i];
+    if (_a[0] !== _b[0] || _a[1] !== _b[1] || _a[2] !== _b[2]) {
+      lineElements[ptr++] = _b;
+    }
+  }
+  lineElements.length = ptr;
+  return lineElements;
+}
+
 module.exports = function ({ regl }) {
-  function Mesh(position, positionBounds, displacement, displacementBounds, maxDisplacment, stress, stressBounds, palette, count, lineP0, lineD0, lineP1, lineD1, lineN, lineCount) {
+  function Mesh(position, positionBounds, displacement, displacementBounds, maxDisplacment, stress, stressBounds, palette, count, lineP0, lineD0, lineP1, lineD1, lineN, lineElements) {
     this._position = position;
     this._positionBounds = positionBounds;
     this._displacement = displacement;
@@ -122,7 +156,7 @@ module.exports = function ({ regl }) {
     this._lineP1 = lineP1;
     this._lineD1 = lineD1;
     this._lineN = lineN;
-    this._lineCount = lineCount;
+    this._lineElements = lineElements;
 
     this.center = [0, 0, 0];
     this.radius = 0;
@@ -136,7 +170,7 @@ module.exports = function ({ regl }) {
   var drawElements = regl({
     frag: '\n    precision mediump float;\n    varying float intensity;\n    uniform sampler2D palette;\n    void main () {\n      vec3 color = texture2D(palette, vec2(intensity)).rgb;\n      gl_FragColor = vec4(pow(color, vec3(1. / 2.2)), 1);\n    }\n    ',
 
-    vert: '\n    precision highp float;\n\n    attribute vec3 position, displacement;\n    attribute float stress;\n\n    uniform mat4 projection, view;\n\n    uniform float displacementMag;\n\n    uniform vec3 displacementColor;\n    uniform float stressColor, totalColor, colorShift;\n\n    varying float intensity;\n\n    void main () {\n      intensity =\n        stressColor * stress +\n        totalColor * length(displacement) +\n        dot(displacementColor, displacement) +\n        colorShift;\n      gl_Position = projection * view *\n        vec4(position + displacementMag * displacement, 1);\n    }\n    ',
+    vert: '\n    precision mediump float;\n\n    attribute vec3 position, displacement;\n    attribute float stress;\n\n    uniform mat4 projection, view;\n\n    uniform float displacementMag;\n\n    uniform vec3 displacementColor;\n    uniform float stressColor, totalColor, colorShift;\n\n    varying float intensity;\n\n    void main () {\n      intensity =\n        stressColor * stress +\n        totalColor * length(displacement) +\n        dot(displacementColor, displacement) +\n        colorShift;\n      gl_Position = projection * view *\n        vec4(position + displacementMag * displacement, 1);\n    }\n    ',
 
     uniforms: {
       displacementMag: regl.prop('displacementMag'),
@@ -162,7 +196,7 @@ module.exports = function ({ regl }) {
   });
 
   var drawLines = regl({
-    vert: '\n    precision highp float;\n\n    attribute vec3 p0, d0, p1, d1;\n    attribute float n;\n\n    uniform mat4 projection, view;\n    uniform float displacementMag, lineWidth;\n    uniform vec2 shape;\n\n    void main () {\n      vec3 q0 = p0 + displacementMag * d0;\n      vec3 q1 = p1 + displacementMag * d1;\n      vec4 s0 = projection * view * vec4(q0, 1);\n      vec4 s1 = projection * view * vec4(q1, 1);\n      vec2 d = lineWidth * n * normalize(s1.xy * s0.w - s0.xy * s1.w);\n      gl_Position = s0 + s0.w * vec4(d.y / shape.x, -d.x / shape.y, 0, 0);\n    }\n    ',
+    vert: '\n    precision mediump float;\n\n    attribute vec3 p0, d0, p1, d1;\n    attribute float n;\n\n    uniform mat4 projection, view;\n    uniform float displacementMag, lineWidth;\n    uniform vec2 shape;\n\n    void main () {\n      vec3 q0 = p0 + displacementMag * d0;\n      vec3 q1 = p1 + displacementMag * d1;\n      vec4 s0 = projection * view * vec4(q0, 1);\n      vec4 s1 = projection * view * vec4(q1, 1);\n      vec2 d = lineWidth * n * normalize(s1.xy * s0.w - s0.xy * s1.w);\n      gl_Position = s0 + s0.w * vec4(d.y / shape.x, -d.x / shape.y, 0, 0);\n    }\n    ',
 
     frag: '\n    precision lowp float;\n    void main () {\n      gl_FragColor = vec4(0, 0, 0, 1);\n    }\n    ',
 
@@ -186,7 +220,7 @@ module.exports = function ({ regl }) {
       func: '<='
     },
 
-    count: regl.this('_lineCount')
+    elements: regl.this('_lineElements')
   });
 
   Mesh.prototype = {
@@ -271,24 +305,37 @@ module.exports = function ({ regl }) {
     var lineP1 = [];
     var lineD1 = [];
     var lineN = [];
-    var lineCount = 0;
+    var lineV = [];
 
-    function E(p0, d0, p1, d1) {
-      lineP0.push(p0, p0, p1, p1, p0, p1);
-      lineD0.push(d0, d0, d1, d1, d0, d1);
-      lineP1.push(p1, p1, p0, p0, p1, p0);
-      lineD1.push(d1, d1, d0, d0, d1, d0);
-      lineN.push(1, -1, 1, -1, 1, 1);
-      lineCount += 6;
+    var lineVertHash = {};
+    function LV(p0, d0, p1, d1, n) {
+      var k = p0[0] * P_TOL + ',' + p0[1] * P_TOL + ',' + p0[2] * P_TOL;
+      var bucket = lineVertHash[k] || (lineVertHash[k] = []);
+
+      for (var i = 0; i < bucket.length; ++i) {
+        var x = bucket[i];
+        if (lineN[x] !== n || cmpD(d0, lineD0[x]) || cmpD(d1, lineD1[x]) || cmpP(p1, lineP1[x])) {
+          break;
+        }
+      }
+
+      var c = lineP0.length;
+      bucket.push(c);
+      lineV.push(c);
+      lineP0.push(p0);
+      lineD0.push(d0);
+      lineP1.push(p1);
+      lineD1.push(d1);
+      lineN.push(n);
     }
 
-    function C(pa0, da0, pa1, da1, pb0, db0, pb1, db1) {
-      lineP0.push(pa1, pa1, pb0, pb0, pa1, pb0);
-      lineD0.push(da1, da1, db0, db0, da1, db0);
-      lineP1.push(pa0, pa0, pb1, pb1, pa0, pb1);
-      lineD1.push(da0, da0, db1, db1, da0, db1);
-      lineN.push(1, -1, 1, -1, 1, 1);
-      lineCount += 6;
+    function E(p0, d0, p1, d1) {
+      LV(p0, d0, p1, d1, 1);
+      LV(p0, d0, p1, d1, -1);
+      LV(p1, d1, p0, d0, 1);
+      LV(p1, d1, p0, d0, -1);
+      LV(p0, d0, p1, d1, 1);
+      LV(p1, d1, p0, d0, 1);
     }
 
     function W6(a, b) {
@@ -312,27 +359,13 @@ module.exports = function ({ regl }) {
         }
       }
 
-      var corners = [[], [], []];
-
       for (var s = 0; s < 3; ++s) {
-        var P0 = null;
-        var D0 = null;
         var P1 = null;
         var D1 = null;
-        for (var _i = 0; _i <= N; ++_i) {
-          var _W = s === 0 ? W6(_i / N, 0) : s === 1 ? W6(0, _i / N) : W6(_i / N, 1 - _i / N);
+        for (var _i2 = 0; _i2 <= N; ++_i2) {
+          var _W = s === 0 ? W6(_i2 / N, 0) : s === 1 ? W6(0, _i2 / N) : W6(_i2 / N, 1 - _i2 / N);
           var P2 = dot3(P, _W);
           var D2 = dot3(D, _W);
-
-          if (_i <= 1 || _i === N - 1) {
-            corners[s].push([P2, D2]);
-          }
-
-          if (P0) {
-            C(P0, D0, P1, D1, P1, D1, P2, D2);
-          }
-          P0 = P1;
-          D0 = D1;
 
           if (P1) {
             E(P1, D1, P2, D2);
@@ -340,11 +373,6 @@ module.exports = function ({ regl }) {
           P1 = P2;
           D1 = D2;
         }
-      }
-
-      for (var d = 0; d < 3; ++d) {
-        var u = (d + 2) % 3;
-        C(corners[u][2][0], corners[u][2][1], corners[d][0][0], corners[d][0][1], corners[d][0][0], corners[d][0][1], corners[d][1][0], corners[d][1][1]);
       }
     }
 
@@ -367,32 +395,18 @@ module.exports = function ({ regl }) {
         }
       }
 
-      var corners = [[], [], [], []];
-
       var curCorner = 0;
       for (var d = 0; d < 2; ++d) {
         for (var s = 0; s <= 1; ++s, ++curCorner) {
-          var P0 = null;
-          var D0 = null;
           var P1 = null;
           var D1 = null;
-          for (var _i2 = 0; _i2 <= N; ++_i2) {
+          for (var _i3 = 0; _i3 <= N; ++_i3) {
             var ab = [0, 0];
-            ab[d] = 2 * _i2 / N - 1;
+            ab[d] = 2 * _i3 / N - 1;
             ab[d ^ 1] = 2 * s - 1;
             var _W2 = W8(ab[0], ab[1]);
             var P2 = dot3(P, _W2);
             var D2 = dot3(D, _W2);
-
-            if (_i2 <= 1 || _i2 === N - 1) {
-              corners[curCorner].push([P2, D2]);
-            }
-
-            if (P0) {
-              C(P0, D0, P1, D1, P1, D1, P2, D2);
-            }
-            P0 = P1;
-            D0 = D1;
 
             if (P1) {
               E(P1, D1, P2, D2);
@@ -401,11 +415,6 @@ module.exports = function ({ regl }) {
             D1 = D2;
           }
         }
-      }
-
-      for (var _d = 0; _d < 4; ++_d) {
-        var u = (_d + 3) % 4;
-        C(corners[u][2][0], corners[u][2][1], corners[_d][0][0], corners[_d][0][1], corners[_d][0][0], corners[_d][0][1], corners[_d][1][0], corners[_d][1][1]);
       }
     }
 
@@ -417,8 +426,8 @@ module.exports = function ({ regl }) {
           }
           break;
         case 'P8':
-          for (var _i3 = 0; _i3 < stresses.length; ++_i3) {
-            P8(stresses[_i3], cells[_i3]);
+          for (var _i4 = 0; _i4 < stresses.length; ++_i4) {
+            P8(stresses[_i4], cells[_i4]);
           }
           break;
         default:
@@ -431,7 +440,7 @@ module.exports = function ({ regl }) {
         return [255 * Math.pow(r, 2.2), 255 * Math.pow(g, 2.2), 255 * Math.pow(b, 2.2)];
       }),
       shape: [palette.length, 1, 3]
-    }), vertCount, regl.buffer(lineP0), regl.buffer(lineD0), regl.buffer(lineP1), regl.buffer(lineD1), regl.buffer(lineN), lineCount);
+    }), vertCount, regl.buffer(lineP0), regl.buffer(lineD0), regl.buffer(lineP1), regl.buffer(lineD1), regl.buffer(lineN), regl.elements(convertLineVerts(lineV)));
   }
 
   return createMesh;
@@ -473,7 +482,9 @@ module.exports = function ({ canvas, onPan, onZoom, onRotate }) {
   // TODO handle touch events
 };
 },{}],4:[function(require,module,exports){
-var regl = require('regl')();
+var regl = require('regl')({
+  extensions: 'OES_element_index_uint'
+});
 var camera = require('./camera')({ regl });
 var createMesh = require('./fem')({ regl });
 
@@ -489,7 +500,7 @@ var state = {
   elements: true,
   lines: true,
   ortho: true,
-  subdivisions: 4,
+  subdivisions: 3,
   meshData: require('./mesh.json')
 };
 
@@ -564,7 +575,7 @@ require('control-panel')([{
 }, {
   type: 'range',
   label: 'subdivisions',
-  min: 3,
+  min: 1,
   max: 8,
   step: 1,
   initial: state.subdivisions
