@@ -1,3 +1,6 @@
+const P_TOL = 1e6
+const D_TOL = 1e9
+
 const QUAD_TRIS = [
   [0, 0],
   [0, 1],
@@ -27,6 +30,43 @@ function pick (array, index) {
   return r
 }
 
+function cmpP (a, b) {
+  return Math.abs(a[0] - b[0]) < P_TOL ||
+          Math.abs(a[1] - b[1]) < P_TOL ||
+          Math.abs(a[2] - b[2]) < P_TOL
+}
+
+function cmpD (a, b) {
+  return Math.abs(a[0] - b[0]) < D_TOL ||
+          Math.abs(a[1] - b[1]) < D_TOL ||
+          Math.abs(a[2] - b[2]) < D_TOL
+}
+
+function convertLineVerts (lineV) {
+  const lineElements = []
+  for (let i = 0; i < lineV.length; i += 3) {
+    const a = lineV[i]
+    const b = lineV[i + 1]
+    const c = lineV[i + 2]
+    lineElements.push([
+      Math.min(a, b, c),
+      Math.min(Math.max(a, b), Math.max(b, c), Math.max(c, a)),
+      Math.max(a, b, c)
+    ])
+  }
+  lineElements.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
+  let ptr = 1
+  for (let i = 1; i < lineElements.length; ++i) {
+    const a = lineElements[i - 1]
+    const b = lineElements[i]
+    if (a[0] !== b[0] || a[1] !== b[1] || a[2] !== b[2]) {
+      lineElements[ptr++] = b
+    }
+  }
+  lineElements.length = ptr
+  return lineElements
+}
+
 module.exports = function ({regl}) {
   function Mesh (
     position,
@@ -43,7 +83,7 @@ module.exports = function ({regl}) {
     lineP1,
     lineD1,
     lineN,
-    lineCount) {
+    lineElements) {
     this._position = position
     this._positionBounds = positionBounds
     this._displacement = displacement
@@ -58,7 +98,7 @@ module.exports = function ({regl}) {
     this._lineP1 = lineP1
     this._lineD1 = lineD1
     this._lineN = lineN
-    this._lineCount = lineCount
+    this._lineElements = lineElements
 
     this.center = [0, 0, 0]
     this.radius = 0
@@ -83,7 +123,7 @@ module.exports = function ({regl}) {
     `,
 
     vert: `
-    precision highp float;
+    precision mediump float;
 
     attribute vec3 position, displacement;
     attribute float stress;
@@ -133,7 +173,7 @@ module.exports = function ({regl}) {
 
   const drawLines = regl({
     vert: `
-    precision highp float;
+    precision mediump float;
 
     attribute vec3 p0, d0, p1, d1;
     attribute float n;
@@ -181,7 +221,7 @@ module.exports = function ({regl}) {
       func: '<='
     },
 
-    count: regl.this('_lineCount')
+    elements: regl.this('_lineElements')
   })
 
   Mesh.prototype = {
@@ -272,46 +312,40 @@ module.exports = function ({regl}) {
     const lineP1 = []
     const lineD1 = []
     const lineN = []
-    let lineCount = 0
+    const lineV = []
 
-    function E (p0, d0, p1, d1) {
-      lineP0.push(
-        p0, p0, p1,
-        p1, p0, p1)
-      lineD0.push(
-        d0, d0, d1,
-        d1, d0, d1)
-      lineP1.push(
-        p1, p1, p0,
-        p0, p1, p0)
-      lineD1.push(
-        d1, d1, d0,
-        d0, d1, d0)
-      lineN.push(
-        1, -1, 1,
-        -1, 1, 1)
-      lineCount += 6
+    const lineVertHash = {}
+    function LV (p0, d0, p1, d1, n) {
+      const k = (p0[0] * P_TOL) + ',' + (p0[1] * P_TOL) + ',' + (p0[2] * P_TOL)
+      const bucket = lineVertHash[k] || (lineVertHash[k] = [])
+
+      for (let i = 0; i < bucket.length; ++i) {
+        const x = bucket[i]
+        if (lineN[x] !== n ||
+          cmpD(d0, lineD0[x]) ||
+          cmpD(d1, lineD1[x]) ||
+          cmpP(p1, lineP1[x])) {
+          break
+        }
+      }
+
+      const c = lineP0.length
+      bucket.push(c)
+      lineV.push(c)
+      lineP0.push(p0)
+      lineD0.push(d0)
+      lineP1.push(p1)
+      lineD1.push(d1)
+      lineN.push(n)
     }
 
-    function C (
-      pa0, da0, pa1, da1,
-      pb0, db0, pb1, db1) {
-      lineP0.push(
-        pa1, pa1, pb0,
-        pb0, pa1, pb0)
-      lineD0.push(
-        da1, da1, db0,
-        db0, da1, db0)
-      lineP1.push(
-        pa0, pa0, pb1,
-        pb1, pa0, pb1)
-      lineD1.push(
-        da0, da0, db1,
-        db1, da0, db1)
-      lineN.push(
-        1, -1, 1,
-        -1, 1, 1)
-      lineCount += 6
+    function E (p0, d0, p1, d1) {
+      LV(p0, d0, p1, d1, 1)
+      LV(p0, d0, p1, d1, -1)
+      LV(p1, d1, p0, d0, 1)
+      LV(p1, d1, p0, d0, -1)
+      LV(p0, d0, p1, d1, 1)
+      LV(p1, d1, p0, d0, 1)
     }
 
     function W6 (a, b) {
@@ -342,11 +376,7 @@ module.exports = function ({regl}) {
         }
       }
 
-      const corners = [[], [], []]
-
       for (let s = 0; s < 3; ++s) {
-        let P0 = null
-        let D0 = null
         let P1 = null
         let D1 = null
         for (let i = 0; i <= N; ++i) {
@@ -357,32 +387,12 @@ module.exports = function ({regl}) {
           const P2 = dot3(P, W)
           const D2 = dot3(D, W)
 
-          if (i <= 1 || i === N - 1) {
-            corners[s].push([P2, D2])
-          }
-
-          if (P0) {
-            C(P0, D0, P1, D1,
-              P1, D1, P2, D2)
-          }
-          P0 = P1
-          D0 = D1
-
           if (P1) {
             E(P1, D1, P2, D2)
           }
           P1 = P2
           D1 = D2
         }
-      }
-
-      for (let d = 0; d < 3; ++d) {
-        const u = (d + 2) % 3
-        C(
-          corners[u][2][0], corners[u][2][1],
-          corners[d][0][0], corners[d][0][1],
-          corners[d][0][0], corners[d][0][1],
-          corners[d][1][0], corners[d][1][1])
       }
     }
 
@@ -414,13 +424,9 @@ module.exports = function ({regl}) {
         }
       }
 
-      const corners = [[], [], [], []]
-
       let curCorner = 0
       for (let d = 0; d < 2; ++d) {
         for (let s = 0; s <= 1; ++s, ++curCorner) {
-          let P0 = null
-          let D0 = null
           let P1 = null
           let D1 = null
           for (let i = 0; i <= N; ++i) {
@@ -431,17 +437,6 @@ module.exports = function ({regl}) {
             const P2 = dot3(P, W)
             const D2 = dot3(D, W)
 
-            if (i <= 1 || i === N - 1) {
-              corners[curCorner].push([P2, D2])
-            }
-
-            if (P0) {
-              C(P0, D0, P1, D1,
-                P1, D1, P2, D2)
-            }
-            P0 = P1
-            D0 = D1
-
             if (P1) {
               E(P1, D1, P2, D2)
             }
@@ -449,15 +444,6 @@ module.exports = function ({regl}) {
             D1 = D2
           }
         }
-      }
-
-      for (let d = 0; d < 4; ++d) {
-        const u = (d + 3) % 4
-        C(
-          corners[u][2][0], corners[u][2][1],
-          corners[d][0][0], corners[d][0][1],
-          corners[d][0][0], corners[d][0][1],
-          corners[d][1][0], corners[d][1][1])
       }
     }
 
@@ -500,7 +486,7 @@ module.exports = function ({regl}) {
       regl.buffer(lineP1),
       regl.buffer(lineD1),
       regl.buffer(lineN),
-      lineCount)
+      regl.elements(convertLineVerts(lineV)))
   }
 
   return createMesh
